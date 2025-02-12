@@ -1,7 +1,163 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "Help_Frontiers_Ecosystem_APT"
+author: "Colas Guillon"
+date: "2025-01-28"
+output: html_document
 ---
+
+# This loads the packages
+```{r, Library import}
+library(terra)#package to read rasters
+library(sf) #package to read vectors in a data frame format
+library(ggplot2)
+library(dplyr)
+library(xts)
+
+setwd("/Users/eamon/Desktop/Coding/R_Studio/GLOFOR/Zimbabwe_phenology/")
+```
+
+```{r, Open study area}
+
+study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
+mcc <- vect("./Shapefile/MCC.shp")
+protected_areas <- vect("./Shapefile/protected_areas.shp")
+```
+
+# Open the rasters
+```{r, open rasters}
+# Land use type raster for mcc region - integers for types 
+# Values are NaN, 1, 3, 51, 53, 52, 7, 6, 10, 43, 42, 41, 2
+lulc_mcc <-rast("./rasters/LULC_MCC.tif")
+unique(values(lulc_mcc))
+
+#Land use type raster for the Kariba region
+# Values are 4, 2, 5, 7, 3, 1, 10, 6, NaN
+lulc_kariba <- rast("./Rasters/detailled_LULC_Kariba_area.tif")
+unique(values(lulc_kariba))
+
+ndvi <- rast("./rasters/NDVI.tif")
+
+chirps <- rast("./rasters/CHIRPS_pentad.tif")
+
+plot(lulc_mcc)
+```
+
+You can look at the different ndvi values in the parks, without and in the crops (do mean) and without looking the whole annual variation
+
+# Reproject and crop the study area
+```{r, miombo versus mopane on the whole kariba area}
+# Reproject and take resolution of the NDVI file
+lulc_kariba <- project(lulc_kariba,ndvi,method="near") #we reproject the classification but then it takes the ndvi resolution
+#Reproject the study area too
+study_area <- project(study_area,lulc_kariba)#We have to put in the same georeferenced system
+# Crop the land use file 
+lulc_kariba <- crop(lulc_kariba,study_area)
+lulc_kariba_masked <- mask(lulc_kariba,study_area)
+ndvi <- crop(ndvi,study_area)#crop outside of the study zone
+ndvi_masked <- mask(ndvi,study_area)
+
+plot(ndvi_masked)
+
+miombo <- which(lulc_kariba_masked[]==4) #we select the type of forests
+mopane <- which(lulc_kariba_masked[]==5)
+riparian <- which(lulc_kariba_masked[]==7)
+crop <- which(lulc_kariba_masked[]==2)
+
+```
+
+```{r}
+Miombo.NDVI=ndvi_masked[miombo] #we extract the ndvi values for the type of forests
+Mopane.NDVI=ndvi_masked[mopane]
+Riparian.NDVI=ndvi_masked[riparian]
+crop.NDVI=ndvi_masked[crop]
+```
+```{r, dates}
+ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
+dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
+dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
+```
+```{r, mean ndvi}
+#mean of the ndvi
+Miombo.NDVI.mean=colMeans(Miombo.NDVI,na.rm=T)
+Mopane.NDVI.mean=colMeans(Mopane.NDVI,na.rm=T)
+Riparian.NDVI.mean=colMeans(Riparian.NDVI,na.rm=T)
+crop.NDVI.mean=colMeans(crop.NDVI,na.rm=T)
+```
+```{r,plot}
+ndvi_mean=data.frame("dates"=dates_formattees,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean) #we put it in the same data frame
+ndvi_long <- ndvi_mean %>% # we put it in a long format
+  tidyr::pivot_longer(cols = c(Miombo, Mopane, Riparian,Crop), 
+               names_to = "Type", 
+               values_to = "NDVI")
+ggplot(ndvi_long,aes(x=dates,y=NDVI,color=Type))+ 
+  geom_line()+
+  scale_color_manual(values = c("Miombo" = "green", "Mopane" = "forestgreen", "Riparian" = "lightblue","Crop"="orange")) +  
+  labs(title = "Évolution du NDVI", x = "Date", y = "NDVI", color = "Végétation") + 
+  theme_minimal()
+
+```
+```{r, rain}
+# Changing to same resolution
+chirps <- resample(chirps,lulc_kariba_masked,method="bilinear") #we need to put at the same resolution than ndvi & lulc
+#Crop
+chirps <- crop(chirps,study_area)
+#Mask - everything outside no data
+chirps_masked <- mask(chirps,study_area)
+
+rain.miombo=chirps_masked[miombo] #we extract the rain values on miombo forests
+rain.mopane=chirps_masked[mopane]
+rain.riparian=chirps_masked[riparian]
+rain.crop=chirps_masked[crop]
+```
+```{r}
+# you could calculate the mean rainfall per area, per types of forest
+```
+
+```{r}
+rain.dates=names(chirps_masked) #Extract the name of ndvi bands
+dates = sub("_precipitation", "", rain.dates) #we keep only the date
+dates_formattees <- as.Date(dates,"%Y%m%d")
+
+# Conversion to Monthly Sum
+rain.miombo.mean=colMeans(rain.miombo,na.rm=T) # Mean of rain over miombo
+rain.miombo.monthly=aggregate(rain.miombo.mean,by=list(format(dates_formattees,"%Y %m")),sum,na.rm=T) %>% 
+  rename("Date"=Group.1,"Rain_miombo"=x)
+
+rain.mopane.mean=colMeans(rain.mopane,na.rm=T) 
+rain.mopane.monthly=aggregate(rain.mopane.mean,by=list(format(dates_formattees,"%Y %m")),sum,na.rm=T) %>% 
+  rename("Date"=Group.1,"Rain_mopane"=x)
+
+rain.crop.mean=colMeans(rain.crop,na.rm=T) 
+rain.crop.monthly=aggregate(rain.crop.mean,by=list(format(dates_formattees,"%Y %m")),sum,na.rm=T) %>% 
+  rename("Date"=Group.1,"Rain_crop"=x)
+
+rain=merge(rain.miombo.monthly,rain.mopane.monthly,by="Date")
+rain=merge(rain,rain.crop.monthly,by="Date")
+rain_long=tidyr::pivot_longer(rain,cols = c(Rain_miombo,Rain_mopane,Rain_crop), 
+               names_to = "Type of forest", values_to = "Rain")
+# Plot
+ggplot(tail(rain_long,36),aes(x=Date,y=Rain,fill=`Type of forest`))+ # 36 last rows gives you 2024
+  geom_col(position="dodge") #on prend que les données de 2024
+```
+```{r} 
+#exploration de la corrélation entre pluie et ndvi
+chirps_16_days <- tapp(chirps_masked, index = cut(1:nlyr(chirps_masked),length(dates_formattees)), fun = mean) # we need the rain (5 days) to fit with the ndvi (16 days)
+cor(values(chirps_16_days),values(ndvi_masked),use="na.or.complete") #to dig if we want a correlation map
+```
+
+
+```{r}
+#We can work on the different types of forest in the MCC
+miombo=which(lulc_mcc[]==41 | lulc_mcc[]==42 | lulc_mcc[]==43)
+mopane=which(lulc_mcc[]==51 | lulc_mcc[]==52 | lulc_mcc[]==53)
+riparian=which(lulc_mcc[]==7)
+```
+
+```{r}
+plot(chirps_16_days)
+
+
+```
 
 
 
