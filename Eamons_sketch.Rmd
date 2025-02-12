@@ -4,8 +4,8 @@ author: "Colas Guillon"
 date: "2025-01-28"
 output: html_document
 ---
-
-# This loads the packages
+# Set Up
+### This loads the packages
 ```{r, Library import}
 library(terra)#package to read rasters
 library(sf) #package to read vectors in a data frame format
@@ -14,7 +14,7 @@ library(dplyr)
 library(xts)
 ```
 
-# Import the data 
+### Import the data 
 NDVI = 230 layers
 CHIRPS = 720
 ```{r, Open study area}
@@ -39,16 +39,8 @@ ndvi <- rast("./rasters/NDVI.tif")
 chirps <- rast("./rasters/CHIRPS_pentad.tif")
 ```
 
-# Plot the Land Use Types of MCC for last image in the stack
-```{r, open rasters}
-plot(chirps[[16]])
-
-nlyr(chirps)
-```
-
-You can look at the different ndvi values in the parks, without and in the crops (do mean) and without looking the whole annual variation
-
-# Reproject the files to match the NDVI data
+# Process the NDVI Data
+### Reproject the files to match the NDVI data
 ```{r, miombo versus mopane on the whole kariba area}
 # Reproject and take resolution of the NDVI file
 lulc_kariba <- project(lulc_kariba,ndvi,method="near") #we reproject the classification but then it takes the ndvi resolution
@@ -57,7 +49,7 @@ lulc_kariba <- project(lulc_kariba,ndvi,method="near") #we reproject the classif
 study_area <- project(study_area,lulc_kariba)#We have to put in the same georeferenced system
 ```
 
-#Crop and mask the rasters
+### Crop and mask the rasters
 This crops it to only the study area and then masks the area.
 ```{r}
 # Crop and mask the land use file
@@ -74,7 +66,7 @@ ndvi_masked <- ndvi %>%
 chirps_masked <- chirps
 ```
 
-# Isolate each of the landcover classes from the land use file
+### Isolate each of the landcover classes from the land use file
 ```{r}
 # Extract the indices of the cells which are of each landcover type
 miombo <- which(lulc_kariba_masked[]==4) #we select the type of forests
@@ -93,7 +85,7 @@ Riparian.NDVI=ndvi_masked[riparian]
 crop.NDVI=ndvi_masked[crop]
 ```
 
-#Take the mean of the ndvi for each landcover type
+### Take the mean of the ndvi for each landcover type
 ```{r, mean ndvi}
 Miombo.NDVI.mean=colMeans(Miombo.NDVI,na.rm=T)
 Mopane.NDVI.mean=colMeans(Mopane.NDVI,na.rm=T)
@@ -101,7 +93,7 @@ Riparian.NDVI.mean=colMeans(Riparian.NDVI,na.rm=T)
 crop.NDVI.mean=colMeans(crop.NDVI,na.rm=T)
 ```
 
-#Extract the dates from the NDVI
+### Extract the dates from the NDVI
 ```{r, dates}
 # This extracts the dates as a character string
 ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
@@ -114,7 +106,7 @@ dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
 dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
 
-# Plot the Data
+### Plot the Data
 ```{r,plot}
 # Put the data into a dataframe
 ndvi_mean=data.frame("dates"=dates_formattees,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean)#we put it in the same data frame
@@ -128,27 +120,23 @@ ggplot(ndvi_long,aes(x=dates,y=NDVI,color=Type))+
   scale_color_manual(values = c("Miombo" = "green", "Mopane" = "forestgreen", "Riparian" = "lightblue","Crop"="orange")) +  
   labs(title = "Évolution du NDVI", x = "Date", y = "NDVI", color = "Végétation") + 
   theme_minimal()
-
 ```
-
-
+# CHIRPS Data
+### Reproject, crop and mask
 ```{r, rain}
-# Changing to same resolution
-chirps <- resample(chirps,lulc_kariba_masked,method="bilinear") #we need to put at the same resolution than ndvi & lulc
-#Crop
-chirps <- crop(chirps,study_area)
-#Mask - everything outside no data
-chirps_masked <- mask(chirps,study_area)
+# Resample, crop and mask
+chirps_masked <- chirps %>%
+  resample(lulc_kariba_masked, method="bilinear") %>%
+  crop(study_area) %>%
+  mask(study_area)
 
 rain.miombo=chirps_masked[miombo] #we extract the rain values on miombo forests
 rain.mopane=chirps_masked[mopane]
 rain.riparian=chirps_masked[riparian]
 rain.crop=chirps_masked[crop]
 ```
-```{r}
-# you could calculate the mean rainfall per area, per types of forest
-```
 
+### 
 ```{r}
 rain.dates=names(chirps_masked) #Extract the name of ndvi bands
 dates = sub("_precipitation", "", rain.dates) #we keep only the date
@@ -175,6 +163,9 @@ rain_long=tidyr::pivot_longer(rain,cols = c(Rain_miombo,Rain_mopane,Rain_crop),
 ggplot(tail(rain_long,36),aes(x=Date,y=Rain,fill=`Type of forest`))+ # 36 last rows gives you 2024
   geom_col(position="dodge") #on prend que les données de 2024
 ```
+
+# CHIRPS
+###
 ```{r} 
 #exploration de la corrélation entre pluie et ndvi
 chirps_16_days <- tapp(chirps_masked, index = cut(1:nlyr(chirps_masked),length(dates_formattees)), fun = mean) # we need the rain (5 days) to fit with the ndvi (16 days)
