@@ -226,4 +226,6 @@ mopane=which(lulc_mcc[]==51 | lulc_mcc[]==52 | lulc_mcc[]==53)
 riparian=which(lulc_mcc[]==7)
 ```
 
+# test
+hi
 
