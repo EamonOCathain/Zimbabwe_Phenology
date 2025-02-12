@@ -15,6 +15,8 @@ library(xts)
 ```
 
 # Import the data 
+NDVI = 230 layers
+CHIRPS = 720
 ```{r, Open study area}
 # Vectors
 study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
@@ -39,7 +41,9 @@ chirps <- rast("./rasters/CHIRPS_pentad.tif")
 
 # Plot the Land Use Types of MCC for last image in the stack
 ```{r, open rasters}
-plot(ndvi[[16]])
+plot(chirps[[16]])
+
+nlyr(chirps)
 ```
 
 You can look at the different ndvi values in the parks, without and in the crops (do mean) and without looking the whole annual variation
@@ -54,41 +58,39 @@ study_area <- project(study_area,lulc_kariba)#We have to put in the same georefe
 ```
 
 #Crop and mask the rasters
-This crops it to only the study area and then masks the area 
+This crops it to only the study area and then masks the area.
 ```{r}
-# Crop the land use file 
-lulc_kariba <- crop(lulc_kariba,study_area)
-
-# Mask the land use file with the study area
-lulc_kariba_masked <- mask(lulc_kariba,study_area)
-
+# Crop and mask the land use file
 lulc_kariba_masked <- lulc_kariba %>%
   crop(study_area) %>%
   mask(study_area)
 
-# Crop and mask the NDVI
-ndvi <- crop(ndvi,study_area)#crop outside of the study zone
-ndvi_masked <- mask(ndvi,study_area)
+# Same for NDVI
+ndvi_masked <- ndvi %>%
+  crop(study_area) %>%
+  mask(study_area)
 
-# Extract only the cells which are of each landcover type
+# Same for CHIRPS
+chirps_masked <- chirps
+```
+
+# Isolate each of the landcover classes from the land use file
+```{r}
+# Extract the indices of the cells which are of each landcover type
 miombo <- which(lulc_kariba_masked[]==4) #we select the type of forests
 mopane <- which(lulc_kariba_masked[]==5)
 riparian <- which(lulc_kariba_masked[]==7)
 crop <- which(lulc_kariba_masked[]==2)
 ```
-# 
+
+# Extract the NDVI for each landcover type
+This extracts the NDVI value of each raster at the indices which correspond to the land cover types.
+It stores each raster layer as a column and the rows are cells (in a dataframe)
 ```{r}
 Miombo.NDVI=ndvi_masked[miombo] #we extract the ndvi values for the type of forests
 Mopane.NDVI=ndvi_masked[mopane]
 Riparian.NDVI=ndvi_masked[riparian]
 crop.NDVI=ndvi_masked[crop]
-```
-
-#Extract the dates from the NDVI
-```{r, dates}
-ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
-dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
-dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
 
 #Take the mean of the ndvi for each landcover type
@@ -97,6 +99,19 @@ Miombo.NDVI.mean=colMeans(Miombo.NDVI,na.rm=T)
 Mopane.NDVI.mean=colMeans(Mopane.NDVI,na.rm=T)
 Riparian.NDVI.mean=colMeans(Riparian.NDVI,na.rm=T)
 crop.NDVI.mean=colMeans(crop.NDVI,na.rm=T)
+```
+
+#Extract the dates from the NDVI
+```{r, dates}
+# This extracts the dates as a character string
+ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
+
+# Because there the format is 2015_03_18_NDVI, we want to get rid of the NDVI
+# Therefore we remove it using sub()
+dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
+
+# Then we convert the character string into a date format object
+dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
 
 # Plot the Data

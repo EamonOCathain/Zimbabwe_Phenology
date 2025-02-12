@@ -148,9 +148,12 @@ rain_long=tidyr::pivot_longer(rain,cols = c(Rain_miombo,Rain_mopane,Rain_crop),
 ggplot(tail(rain_long,36),aes(x=Date,y=Rain,fill=`Type of forest`))+ # 36 last rows gives you 2024
   geom_col(position="dodge") #on prend que les données de 2024
 ```
+
 ```{r} 
 #exploration de la corrélation entre pluie et ndvi
 chirps_16_days <- tapp(chirps_masked, index = cut(1:nlyr(chirps_masked),length(dates_formattees)), fun = mean) # we need the rain (5 days) to fit with the ndvi (16 days)
+
+# Correlation
 cor(values(chirps_16_days),values(ndvi_masked),use="na.or.complete") #to dig if we want a correlation map
 ```
 
