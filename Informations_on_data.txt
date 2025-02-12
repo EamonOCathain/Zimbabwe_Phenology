@@ -1,0 +1,39 @@
+#### Rasters
+- LULC_MCC.tif (created based on Sentinel 2 images and IOTA 2  chain process ask for more details) 
+Land Use / Land Cover at a local scale (Mucheni Commmunity Conservancy + Chizarira+Chete+Sijaria) with differents type of forests (miombo, mopane, shrubs, open and closed forest),10m resolution
+1: Water
+2: Cropland
+3: Bare soil
+41: Miombo shrub (<3m)
+42: Miombo Open-forest (>3m height & <70% cover)
+43: Miombo Closed-forest (>3m & >70% cover)
+51: Mopane shrub
+52: Mopane Open-forest
+53: Mopane Closed-forest
+6: Grassland
+7: Riparian woodland
+10: Settlements 
+
+- Detailled_LULC_Kariba_area.tif (created based on Sentinel 2 images and IOTA 2  chain process ask for more details)
+Land Use / Land Cover at kariba area with differents type of forests, 10m resolution
+1: Water
+2: Cropland
+3: Bare soil
+4: Miombo woodland
+5: Mopane woodland
+6: Grassland
+7: Riparian woodland
+10: Settlements
+
+- CHIRPS_pentad.tif (from Google Earth Engine)
+mm of rainfall/ pentade with a 0.05° resolution with one band per pentad date
+
+-NDVI.tif (from Google Earth Engine)
+Normalized Differenced Vegetation Indice, resolution 250m with values from -2000 to 10000 with one band per 16 days
+
+#### Shapefiles 
+- Study_zone_Kariba_lake.shp : study zone composed of national parks, state forest, safaris areas and communal lands
+- MCC.shp : Mucheni Community Conservancy
+- Protected_areas.shp (collected on WDPA)
+
+Tip : you should better work on MCC + Chizarira + Chete + Sijaria first and then maybe extent
