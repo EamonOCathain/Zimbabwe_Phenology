@@ -13,6 +13,7 @@ library(ggplot2)
 library(dplyr)
 library(xts)
 ```
+
 ```{r, Open study area}
 study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
 mcc <- vect("./Shapefile/MCC.shp")
