@@ -21,7 +21,9 @@ CHIRPS = 720
 # Vectors
 study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
 mcc <- vect("./Shapefile/MCC.shp")
+mcc<- project(mcc, lulc_mcc)
 protected_areas <- vect("./Shapefile/protected_areas.shp")
+protected_areas <- project(protected_areas, lulc_kariba)
 
 # Rasters
 # Land use type raster for mcc region - integers for types 
@@ -37,6 +39,16 @@ ndvi <- rast("./rasters/NDVI.tif")
 
 #CHIRPS
 chirps <- rast("./rasters/CHIRPS_pentad.tif")
+
+plot(chirps)
+
+# Plot
+plot(lulc_kariba)
+plot(protected_areas, add=T)
+
+# Plot
+plot(lulc_mcc)
+plot(mcc, add = T)
 ```
 
 # Process the NDVI Data
@@ -106,7 +118,7 @@ dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
 dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
 
-### Plot the Data
+### Plot NDVI vs Time
 ```{r,plot}
 # Put the data into a dataframe
 ndvi_mean=data.frame("dates"=dates_formattees,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean)#we put it in the same data frame
@@ -123,6 +135,7 @@ ggplot(ndvi_long,aes(x=dates,y=NDVI,color=Type))+
 ```
 # CHIRPS Data
 ### Reproject, crop and mask
+Chirps here is resampled to reduce the definition and match CRS of land use cover raster
 ```{r, rain}
 # Resample, crop and mask
 chirps_masked <- chirps %>%
@@ -130,18 +143,52 @@ chirps_masked <- chirps %>%
   crop(study_area) %>%
   mask(study_area)
 
-rain.miombo=chirps_masked[miombo] #we extract the rain values on miombo forests
-rain.mopane=chirps_masked[mopane]
-rain.riparian=chirps_masked[riparian]
-rain.crop=chirps_masked[crop]
+miombo.rain=chirps_masked[miombo] #we extract the rain values on miombo forests
+mopane.rain=chirps_masked[mopane]
+riparian.rain=chirps_masked[riparian]
+crop.rain=chirps_masked[crop]
+
+head(miombo.rain)
 ```
 
-### 
+### Take the mean of the ndvi for each landcover type
+```{r, mean ndvi}
+miombo.rain.mean=colMeans(miombo.rain,na.rm=T)
+mopane.rain.mean=colMeans(mopane.rain,na.rm=T)
+riparian.rain.mean=colMeans(riparian.rain,na.rm=T)
+crop.rain.mean=colMeans(crop.rain,na.rm=T)
+
+head(miombo.rain.mean)
+```
+
+### Extract Chirps Dates
 ```{r}
 rain.dates=names(chirps_masked) #Extract the name of ndvi bands
-dates = sub("_precipitation", "", rain.dates) #we keep only the date
-dates_formattees <- as.Date(dates,"%Y%m%d")
+rain.dates = sub("_precipitation", "", rain.dates) #we keep only the date
+rain.dates <- as.Date(rain.dates,"%Y%m%d")
+```
 
+### Plot Rain vs Time
+```{r,plot}
+# Put the data into a dataframe
+rain_mean=data.frame("dates"=rain.dates,"Miombo"=miombo.rain.mean,"Mopane"=mopane.rain.mean,"Riparian"=riparian.rain.mean,"Crop"=crop.rain.mean)#we put it in the same data frame
+
+# Pivot the dataframe into a long one
+rain_long <- rain_mean %>% # we put it in a long format
+  tidyr::pivot_longer(cols = c(Miombo, Mopane, Riparian,Crop), 
+               names_to = "Type", 
+               values_to = "rain")
+
+# Plot the rain vs time
+ggplot(rain_long,aes(x=dates,y=rain,color=Type))+ 
+  geom_line()+
+  scale_color_manual(values = c("Miombo" = "green", "Mopane" = "forestgreen", "Riparian" = "lightblue","Crop"="orange")) +  
+  labs(title = "Évolution du rain", x = "Date", y = "rain", color = "Végétation") + 
+  theme_minimal()
+```
+# His script on CHIRPS
+### Take the monthly mean of rainfall - Do we want to do this?
+```{r}
 # Conversion to Monthly Sum
 rain.miombo.mean=colMeans(rain.miombo,na.rm=T) # Mean of rain over miombo
 rain.miombo.monthly=aggregate(rain.miombo.mean,by=list(format(dates_formattees,"%Y %m")),sum,na.rm=T) %>% 
@@ -164,28 +211,19 @@ ggplot(tail(rain_long,36),aes(x=Date,y=Rain,fill=`Type of forest`))+ # 36 last r
   geom_col(position="dodge") #on prend que les données de 2024
 ```
 
-# CHIRPS
-###
+### Correlation of rainfall and NDVI
 ```{r} 
 #exploration de la corrélation entre pluie et ndvi
 chirps_16_days <- tapp(chirps_masked, index = cut(1:nlyr(chirps_masked),length(dates_formattees)), fun = mean) # we need the rain (5 days) to fit with the ndvi (16 days)
 cor(values(chirps_16_days),values(ndvi_masked),use="na.or.complete") #to dig if we want a correlation map
 ```
 
-
+### Different types of forest in the MCC
 ```{r}
 #We can work on the different types of forest in the MCC
 miombo=which(lulc_mcc[]==41 | lulc_mcc[]==42 | lulc_mcc[]==43)
 mopane=which(lulc_mcc[]==51 | lulc_mcc[]==52 | lulc_mcc[]==53)
 riparian=which(lulc_mcc[]==7)
-```
-
-```{r}
-plot(chirps_16_days)
-```
-
-```{r}
-
 ```
 
 
