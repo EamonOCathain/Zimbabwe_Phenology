@@ -40,7 +40,7 @@ ndvi <- rast("./rasters/NDVI.tif")
 #CHIRPS
 chirps <- rast("./rasters/CHIRPS_pentad.tif")
 
-plot(chirps)
+plot(chirps[[1]])
 
 # Plot
 plot(lulc_kariba)
@@ -49,6 +49,16 @@ plot(protected_areas, add=T)
 # Plot
 plot(lulc_mcc)
 plot(mcc, add = T)
+
+# Convert raster grid to polygons
+grid_polygons <- as.polygons(chirps)
+
+# Plot the base raster first
+plot(lulc_mcc, main="Raster with Transparent Grid Overlay")
+plot(grid_polygons, add=TRUE, border="black", col=NA, lwd=0.5)
+
+image(chirps, col=NA, add=TRUE)  # This prevents actual cell coloring
+drawGrid(chirps, col="black", lwd=0.5)
 ```
 
 # Process the NDVI Data
@@ -115,13 +125,13 @@ ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
 dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
 
 # Then we convert the character string into a date format object
-dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
+ndvi_dates <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
 
 ### Plot NDVI vs Time
 ```{r,plot}
 # Put the data into a dataframe
-ndvi_mean=data.frame("dates"=dates_formattees,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean)#we put it in the same data frame
+ndvi_mean=data.frame("dates"=ndvi_dates,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean)#we put it in the same data frame
 
 ndvi_long <- ndvi_mean %>% # we put it in a long format
   tidyr::pivot_longer(cols = c(Miombo, Mopane, Riparian,Crop), 
@@ -130,7 +140,7 @@ ndvi_long <- ndvi_mean %>% # we put it in a long format
 ggplot(ndvi_long,aes(x=dates,y=NDVI,color=Type))+ 
   geom_line()+
   scale_color_manual(values = c("Miombo" = "green", "Mopane" = "forestgreen", "Riparian" = "lightblue","Crop"="orange")) +  
-  labs(title = "Évolution du NDVI", x = "Date", y = "NDVI", color = "Végétation") + 
+  labs(title = "Change in NDVI", x = "Date", y = "NDVI", color = "Vegetation") + 
   theme_minimal()
 ```
 # CHIRPS Data
@@ -186,6 +196,41 @@ ggplot(rain_long,aes(x=dates,y=rain,color=Type))+
   labs(title = "Évolution du rain", x = "Date", y = "rain", color = "Végétation") + 
   theme_minimal()
 ```
+
+#Process Timeseries to Remove Small Scale Variability
+## NDVI 
+###Convert into a timeseries object and Smooth It
+This takes an average of the 
+```{r}
+ndvi_xts <- xts(Miombo.NDVI.mean, order.by=ndvi_dates)
+# Plot original data
+
+# Apply a 30-day rolling mean to smooth short-term noise
+ndvi_smoothed <- rollapply(ndvi_xts, width=2, FUN=mean, align="center", fill=NA)
+
+# Plot smoothed time series
+plot(ndvi_xts, main="NDVI Smoothed (5-frame Rolling Mean)", col="gray")
+lines(ndvi_smoothed, col="red", lwd=2) # Overlay smoothed series
+```
+# NDVI Trend
+```{r}
+ndvi_trend <- lm(ndvi_smoothed ~ )
+```
+
+## CHIRPS
+```{r}
+rain_xts <- xts(miombo.rain.mean, order.by=rain.dates)
+# Plot original data
+
+# Apply a 30-day rolling mean to smooth short-term noise
+rain_smoothed <- rollapply(rain_xts, width=6, FUN=mean, align="center", fill=NA)
+
+# Plot smoothed time series
+plot(rain_xts, main="rain Smoothed (5-frame Rolling Mean)", col="gray")
+lines(rain_smoothed, col="red", lwd=2)  # Overlay smoothed series
+```
+
+
 # His script on CHIRPS
 ### Take the monthly mean of rainfall - Do we want to do this?
 ```{r}
