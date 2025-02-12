@@ -11,6 +11,7 @@ library(terra)#package to read rasters
 library(sf) #package to read vectors in a data frame format
 library(ggplot2)
 library(dplyr)
+library(xts)
 ```
 ```{r, Open study area}
 study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
@@ -43,43 +44,55 @@ You can look at the different ndvi values in the parks, without and in the crops
 ```{r, miombo versus mopane on the whole kariba area}
 # Reproject and take resolution of the NDVI file
 lulc_kariba <- project(lulc_kariba,ndvi,method="near") #we reproject the classification but then it takes the ndvi resolution
+
 #Reproject the study area too
 study_area <- project(study_area,lulc_kariba)#We have to put in the same georeferenced system
+
 # Crop the land use file 
 lulc_kariba <- crop(lulc_kariba,study_area)
+
+# Mask the land use file with the study area
 lulc_kariba_masked <- mask(lulc_kariba,study_area)
+
+# Crop and mask the NDVI
 ndvi <- crop(ndvi,study_area)#crop outside of the study zone
 ndvi_masked <- mask(ndvi,study_area)
 
-plot(ndvi_masked)
-
+# Extract only the cells which are of each landcover type
 miombo <- which(lulc_kariba_masked[]==4) #we select the type of forests
 mopane <- which(lulc_kariba_masked[]==5)
 riparian <- which(lulc_kariba_masked[]==7)
 crop <- which(lulc_kariba_masked[]==2)
 
 ```
-
+# 
 ```{r}
 Miombo.NDVI=ndvi_masked[miombo] #we extract the ndvi values for the type of forests
 Mopane.NDVI=ndvi_masked[mopane]
 Riparian.NDVI=ndvi_masked[riparian]
 crop.NDVI=ndvi_masked[crop]
 ```
+
+#Extract the dates from the NDVI
 ```{r, dates}
 ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
 dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
 dates_formattees <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
+
+#Take the mean of the ndvi for each landcover type
 ```{r, mean ndvi}
-#mean of the ndvi
 Miombo.NDVI.mean=colMeans(Miombo.NDVI,na.rm=T)
 Mopane.NDVI.mean=colMeans(Mopane.NDVI,na.rm=T)
 Riparian.NDVI.mean=colMeans(Riparian.NDVI,na.rm=T)
 crop.NDVI.mean=colMeans(crop.NDVI,na.rm=T)
 ```
+
+# Plot the Data
 ```{r,plot}
-ndvi_mean=data.frame("dates"=dates_formattees,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean) #we put it in the same data frame
+# Put the data into a dataframe
+ndvi_mean=data.frame("dates"=dates_formattees,"Miombo"=Miombo.NDVI.mean,"Mopane"=Mopane.NDVI.mean,"Riparian"=Riparian.NDVI.mean,"Crop"=crop.NDVI.mean)#we put it in the same data frame
+
 ndvi_long <- ndvi_mean %>% # we put it in a long format
   tidyr::pivot_longer(cols = c(Miombo, Mopane, Riparian,Crop), 
                names_to = "Type", 
@@ -150,7 +163,10 @@ riparian=which(lulc_mcc[]==7)
 
 ```{r}
 plot(chirps_16_days)
-
-linear_model <- lm(chirps ~ ndvi, data = df)
 ```
+
+```{r}
+
+```
+
 
