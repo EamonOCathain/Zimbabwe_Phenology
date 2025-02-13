@@ -14,7 +14,12 @@ library(ggplot2)
 library(dplyr)
 library(xts)
 library(tidyr)
+library(purrr)
 library(readr)
+library(lubridate)
+library(mgcv)
+library(zoo)
+library(broom)
 ```
 
 ### Import the data 
@@ -36,18 +41,32 @@ protected_areas <- vect("./Shapefile/protected_areas.shp")
 study_area<- project(study_area, ndvi)
 mcc<-project(mcc, ndvi)
 protected_areas<-project(protected_areas, ndvi)
+'''
+# Make a list of the csvs containing ET data
+csv_list <- list(
+  miombo_mcc_41 = read_csv("./CSVs/41ET_Table.csv", col_types = cols(.geo = col_skip())),
+  miombo_mcc_42 = read_csv("./CSVs/42ET_Table.csv", col_types = cols(.geo = col_skip())),
+  miombo_mcc_43 = read_csv("./CSVs/43ET_Table.csv", col_types = cols(.geo = col_skip())),
+  mopane_mcc_51 = read_csv("./CSVs/51ET_Table.csv", col_types = cols(.geo = col_skip())),
+  mopane_mcc_52 = read_csv("./CSVs/52ET_Table.csv", col_types = cols(.geo = col_skip())),
+  mopane_mcc_53 = read_csv("./CSVs/53ET_Table.csv", col_types = cols(.geo = col_skip())),
+  riparian_mcc = read_csv("./CSVs/RipET_Table.csv", col_types = cols(.geo = col_skip())),
+  crop_mcc = read_csv("./CSVs/CropET_Table.csv", col_types = cols(.geo = col_skip()))
+)
 
-# Load the CSVs
-mcc_41_ET_csv <- read_csv("./CSVs/41ET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_42_ET_csv <- read_csv("./CSVs/42ET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_43_ET_csv <- read_csv("./CSVs/43ET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_51_ET_csv <- read_csv("./CSVs/51ET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_52_ET_csv <- read_csv("./CSVs/52ET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_53_ET_csv <- read_csv("./CSVs/53ET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_crop_ET_csv <- read_csv("./CSVs/CropET_Table.csv", col_types = cols(.geo = col_skip())) 
-mcc_rip_ET_csv <- read_csv("./CSVs/RipET_Table.csv", col_types = cols(.geo = col_skip())) 
-# Combine CSVs into One DF
+# Rename ET columns with appropriate land cover names
+csv_list <- map2(csv_list, names(csv_list), ~ rename(.x, !!.y := ET))
 
+# Merge all CSVs using full_join by "system:index"
+combined_df <- reduce(csv_list, full_join, by = "system:index")
+
+# Rename "system:index" to "Date" and convert to Date format
+combined_df <- combined_df %>%
+  rename(Date = `system:index`) %>%
+  mutate(Date = as.Date(Date))  # Ensure Date column is in correct format
+
+# Print first few rows to check
+head(combined_df)'''
 ```
 
 # First Plots
@@ -163,15 +182,15 @@ chirps_dates = sub("_precipitation", "", chirps_dates) #we keep only the date
 chirps_dates <- as.Date(chirps_dates,"%Y%m%d")
 ```
 
-# 
+# Define function to extract means
 ```{r}
 extract_means <- function(list_indexes, raster, dates){
   
 # First set up the output df
 col_names <- names(list_indexes)   # Extract the names of the objects dynamically
-output_df <- data.frame(matrix(ncol = length(col_names), nrow = length(dates))) # Create an empty dataframe with these column names
-colnames(output_df) <- col_names # Set the df to take the names from the list
-rownames(output_df) <- dates
+output_df <- data.frame(matrix(ncol = length(col_names)+1, nrow = length(dates))) # Create an empty dataframe with these column names
+colnames(output_df) <- c( "date", col_names) # Set the df to take the names from the list
+output_df$date <- dates
 
 # Now loop through the list and calculate the mean of each date for each land cover
   for (name in col_names){
@@ -179,7 +198,8 @@ rownames(output_df) <- dates
     i <- list_indexes[[name]]
     df <- raster[i] # Extract the values of NDVI for the right cells using the index, store as dataframe with each date being a column
     col_mean <- colMeans(df, na.rm=T) #Take a mean of each column in the dataframe (i.e the date)
-    output_df[[name]] <- col_mean # Add each vector of means to the columns in the df
+    output_df[[name]] <- col_mean # Add each vector of means to the columns in the df  
+    rownames(output_df) <- NULL  # Remove row names
   }
 return(output_df)
 }
@@ -189,19 +209,20 @@ return(output_df)
 ```{r}
 # MCC 
 ndvi_mcc_df <- extract_means(list_mcc, ndvi_masked, ndvi_dates)
+ndvi_mcc_df
+
 chirps_mcc_df <- extract_means(list_mcc, chirps_masked, chirps_dates)
 
 #Kariba
 ndvi_kariba_df <- extract_means(list_kariba, ndvi_masked, ndvi_dates)
 chirps_kariba_df <- extract_means(list_kariba, chirps_masked, chirps_dates)
-
-head(ndvi_mcc_df)
 ```
+
 ###  Plot NDVI vs Time - MCC
 ```{r}
 # Convert rownames (dates) to a proper column
 chirps_df_mcc_long <- chirps_mcc_df %>%
-  mutate(Date = as.Date(rownames(chirps_mcc_df))) %>%
+  mutate(Date = as.Date(chirps_mcc_df$date)) %>%
   pivot_longer(cols = -Date, names_to = "Land_Cover", values_to = "chirps_Mean")
 
 # Plot using ggplot2
@@ -215,20 +236,166 @@ ggplot(chirps_df_mcc_long, aes(x = Date, y = chirps_Mean, color = Land_Cover)) +
 ```
 
 #Process Timeseries to Remove Small Scale Variability
-## NDVI 
-###Convert into a timeseries object and Smooth It
-This takes an average of the 
+### Define functions to process the timeseries data into trends, rolling means and seasonality
 ```{r}
-ndvi_xts <- xts(Miombo.NDVI.mean, order.by=ndvi_dates)
-# Plot original data
+# Trend
+extract_trend_xts <- function(xts_data) {
+  trend_list <- list()
+  
+  for (col_name in colnames(xts_data)) {
+    # Fit GAM model
+    gam_fit <- gam(coredata(xts_data[, col_name]) ~ 
+                   as.numeric(index(xts_data)) +  
+                   s(yday(index(xts_data)), bs = "cc", k = 12))  
+    
+    # Predict full NDVI values
+    full_ndvi <- predict(gam_fit, type = "response")
+    
+    # Predict seasonality term
+    predictions <- predict(gam_fit, type = "terms")
+    seasonality_values <- predictions[, 2]  # Extract seasonality
+    
+    # Trend = Full NDVI - Seasonality
+    trend_values <- full_ndvi - seasonality_values
+    
+    # Convert trend predictions to xts
+    trend_list[[col_name]] <- xts(trend_values, order.by = index(xts_data))
+  }
+  
+  trend_xts <- do.call(merge, trend_list)
+  return(trend_xts)
+}
 
-# Apply a 30-day rolling mean to smooth short-term noise
-ndvi_smoothed <- rollapply(ndvi_xts, width=2, FUN=mean, align="center", fill=NA)
+# Seasonality
+extract_seasonality_xts <- function(xts_data) {
+  
+  seasonality_list <- list()
+  
+  for (col_name in colnames(xts_data)) {
+    # Fit GAM model with seasonality
+    gam_fit <- gam(coredata(xts_data[, col_name]) ~ 
+                   as.numeric(index(xts_data)) +  
+                   s(yday(index(xts_data)), bs = "cc", k = 12))  
+    
+    # Predict full NDVI values
+    full_ndvi <- predict(gam_fit, type = "response")
+    
+    # Predict seasonality component separately (relative effect)
+    predictions <- predict(gam_fit, type = "terms")
+    seasonality_values <- predictions[, 2]  # Extract seasonality term
+    
+    # Adjust seasonality to absolute NDVI scale
+    mean_ndvi <- mean(full_ndvi, na.rm = TRUE)
+    seasonality_values <- seasonality_values + mean_ndvi  # Shift values to match NDVI scale
+    
+    # Convert seasonality predictions to xts
+    seasonality_list[[col_name]] <- xts(seasonality_values, order.by = index(xts_data))
+  }
+  
+  seasonality_xts <- do.call(merge, seasonality_list)
+  
+  # Get the first year and filter the seasonality for that year
+  first_year <- year(min(index(seasonality_xts)))
+  seasonality_xts_one_year <- seasonality_xts[year(index(seasonality_xts)) == first_year]
+  
+  return(seasonality_xts_one_year)
+}
 
-# Plot smoothed time series
-plot(ndvi_xts, main="NDVI Smoothed (5-frame Rolling Mean)", col="gray")
-lines(ndvi_smoothed, col="red", lwd=2) # Overlay smoothed series
+# Rolling Mean
+extract_rolling_mean <- function(xts_data, window_size = 5) {
+  
+  # Apply a rolling mean (default: 5-day window)
+  rolling_mean_xts <- rollapply(xts_data, width = window_size, FUN = mean, align = "center", fill = NA)
+  
+  return(rolling_mean_xts)
+}
+
+# Test trend Significance
+test_trend_significance <- function(trend_xts) {
+  
+  results <- data.frame(LandCover = character(), Slope = numeric(), P_Value = numeric(), R_Squared = numeric(), stringsAsFactors = FALSE)
+  
+  for (col_name in colnames(trend_xts)) {
+    # Prepare the data
+    time_numeric <- as.numeric(index(trend_xts))  # Convert time to numeric for regression
+    trend_values <- coredata(trend_xts[, col_name])  # Extract trend values
+    
+    # Fit linear regression: NDVI Trend ~ Time
+    lm_model <- lm(trend_values ~ time_numeric)
+    lm_summary <- summary(lm_model)  # Get model summary
+    
+    # Extract slope (beta coefficient), p-value, and R-squared
+    slope <- coef(lm_model)[2]
+    p_value <- coef(lm_summary)$coefficients[2, 4]  # Extract p-value of the slope
+    r_squared <- lm_summary$r.squared  # Model fit quality
+    
+    # Store results
+    results <- rbind(results, data.frame(LandCover = col_name, Slope = slope, P_Value = p_value, R_Squared = r_squared))
+  }
+  
+  return(results)
+}
 ```
+
+
+# Compute each for NDVI
+```{r}
+ndvi_seasonality <- extract_seasonality_xts(xts_ndvi_mcc)
+ndvi_trend <- extract_trend_xts(xts_ndvi_mcc)
+ndvi_rolling_mean <- extract_rolling_mean_xts(xts_ndvi_mcc)
+
+head(ndvi_trend)
+
+plot(ndvi_seasonality)
+plot(ndvi_trend)
+plot(ndvi_rolling_mean)
+```
+
+```{r}
+
+
+# Fit GAM model with a cyclic spline for seasonality
+gam_fit <- gam(coredata(xts_ndvi_mcc[, "miombo_mcc_41"]) ~ 
+               s(as.numeric(index(xts_ndvi_mcc)), bs = "cs") +  # Trend component
+               s(yday(index(xts_ndvi_mcc)), bs = "cc", k = 12))  # Seasonal component
+
+# Predict fitted values from the GAM model
+predictions <- predict(gam_fit, type = "terms")  # Extract trend & seasonality separately
+
+# Convert to xts objects
+trend_xts <- xts(predictions[, 1], order.by = index(xts_ndvi_mcc))  # First term (trend)
+seasonality_xts <- xts(predictions[, 2], order.by = index(xts_ndvi_mcc))  # Second term (seasonality)
+
+
+# Convert xts objects to data frames for plotting
+trend_df <- data.frame(Date = index(trend_xts), Trend = coredata(trend_xts))
+seasonality_df <- data.frame(Date = index(seasonality_xts), Seasonality = coredata(seasonality_xts))
+original_df <- data.frame(Date = index(xts_ndvi_mcc), NDVI = coredata(xts_ndvi_mcc[, "miombo_mcc_41"]))
+```
+
+# Plot the seasonality and trends
+```{r}
+# Merge all into one dataframe
+plot_df <- original_df %>%
+  left_join(trend_df, by = "Date") %>%
+  left_join(seasonality_df, by = "Date")
+
+# Plot NDVI with trend
+ggplot(plot_df, aes(x = Date)) +
+  geom_line(aes(y = Trend), color = "red", size = 1) +  # Trend
+  geom_line(aes(y = Seasonality), color = "blue", size = 1) +  # Seasonality
+  labs(title = "NDVI Trend from GAM",
+       x = "Date", y = "NDVI",
+       caption = "Gray = Original, Red = Trend") +
+  theme_minimal()
+
+ggplot(plot_df, aes(x = Date)) +
+  geom_line(aes(y = Seasonality), color = "blue", size = 1) +  # Seasonality
+  labs(title = "Extracted Seasonality from GAM",
+       x = "Date", y = "Seasonal Component") +
+  theme_minimal()
+```
+
 
 ## CHIRPS
 ```{r}
