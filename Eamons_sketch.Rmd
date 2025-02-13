@@ -14,6 +14,7 @@ library(ggplot2)
 library(dplyr)
 library(xts)
 library(tidyr)
+library(readr)
 ```
 
 ### Import the data 
@@ -35,6 +36,18 @@ protected_areas <- vect("./Shapefile/protected_areas.shp")
 study_area<- project(study_area, ndvi)
 mcc<-project(mcc, ndvi)
 protected_areas<-project(protected_areas, ndvi)
+
+# Load the CSVs
+mcc_41_ET_csv <- read_csv("./CSVs/41ET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_42_ET_csv <- read_csv("./CSVs/42ET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_43_ET_csv <- read_csv("./CSVs/43ET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_51_ET_csv <- read_csv("./CSVs/51ET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_52_ET_csv <- read_csv("./CSVs/52ET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_53_ET_csv <- read_csv("./CSVs/53ET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_crop_ET_csv <- read_csv("./CSVs/CropET_Table.csv", col_types = cols(.geo = col_skip())) 
+mcc_rip_ET_csv <- read_csv("./CSVs/RipET_Table.csv", col_types = cols(.geo = col_skip())) 
+# Combine CSVs into One DF
+
 ```
 
 # First Plots
@@ -92,13 +105,13 @@ miombo_kariba <- which(lulc_kariba_masked[]==4) #we select the type of forests
 mopane_kariba <- which(lulc_kariba_masked[]==5)
 riparian_kariba <- which(lulc_kariba_masked[]==7)
 crop_kariba <- which(lulc_kariba_masked[]==2)
-all_mcc <- which(!is.na(values(lulc_mcc_masked)))
+all_kariba <- which(!is.na(values(lulc_mcc_masked)))
 
 list_kariba <- list(miombo_kariba = miombo_kariba, 
                     mopane_kariba = mopane_kariba, 
                     riparian_kariba=riparian_kariba, 
                     crop_kariba=crop_kariba,
-                    all_kariba = all_kariba )
+                    all_kariba = all_kariba)
 ```
 
 ### Isolate each of the landcover classes from the MCC 
