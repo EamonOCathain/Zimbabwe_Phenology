@@ -7,6 +7,7 @@ output: html_document
 # Set Up
 ### This loads the packages
 ```{r, Library import}
+rm(list = ls())
 library(terra)#package to read rasters
 library(sf) #package to read vectors in a data frame format
 library(ggplot2)
@@ -18,37 +19,35 @@ library(xts)
 NDVI = 230 layers
 CHIRPS = 720
 ```{r, Open study area}
-# Vectors
-study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
-mcc <- vect("./Shapefile/MCC.shp")
-mcc<- project(mcc, lulc_mcc)
-protected_areas <- vect("./Shapefile/protected_areas.shp")
-protected_areas <- project(protected_areas, lulc_kariba)
-
 # Rasters
-# Land use type raster for mcc region - integers for types 
-# Values are NaN, 1, 3, 51, 53, 52, 7, 6, 10, 43, 42, 41, 2
-lulc_mcc <-rast("./rasters/LULC_MCC.tif")
-
-#Land use type raster for the Kariba region
-# Values are 4, 2, 5, 7, 3, 1, 10, 6, NaN
-lulc_kariba <- rast("./Rasters/detailled_LULC_Kariba_area.tif")
-
-# NDVI
+lulc_mcc <-rast("./rasters/LULC_MCC.tif") # Values are NaN, 1, 3, 51, 53, 52, 7, 6, 10, 43, 42, 41, 2
+lulc_kariba <- rast("./Rasters/detailled_LULC_Kariba_area.tif") # Values are 4, 2, 5, 7, 3, 1, 10, 6, NaN
 ndvi <- rast("./rasters/NDVI.tif")
-
-#CHIRPS
 chirps <- rast("./rasters/CHIRPS_pentad.tif")
 
-plot(chirps[[1]])
+# Load Vectors
+study_area <- vect("./Shapefile/Zone_etude_Kariba_lake.shp")
+mcc <- vect("./Shapefile/MCC.shp")
+protected_areas <- vect("./Shapefile/protected_areas.shp")
 
-# Plot
-plot(lulc_kariba)
-plot(protected_areas, add=T)
+# Reproject vectors
+study_area<- project(study_area, ndvi)
+mcc<-project(mcc, ndvi)
+protected_areas<-project(protected_areas, ndvi)
+```
+
+# First Plots
+```{r}'''
+plot(ndvi)
 
 # Plot
 plot(lulc_mcc)
-plot(mcc, add = T)
+plot(study_area, add=T)
+
+# Plot
+plot(study_area)
+plot(lulc_mcc)
+plot(study_area, add = T)
 
 # Convert raster grid to polygons
 grid_polygons <- as.polygons(chirps)
@@ -58,75 +57,125 @@ plot(lulc_mcc, main="Raster with Transparent Grid Overlay")
 plot(grid_polygons, add=TRUE, border="black", col=NA, lwd=0.5)
 
 image(chirps, col=NA, add=TRUE)  # This prevents actual cell coloring
-drawGrid(chirps, col="black", lwd=0.5)
+drawGrid(chirps, col="black", lwd=0.5)'''
 ```
 
-# Process the NDVI Data
-### Reproject the files to match the NDVI data
-```{r, miombo versus mopane on the whole kariba area}
-# Reproject and take resolution of the NDVI file
-lulc_kariba <- project(lulc_kariba,ndvi,method="near") #we reproject the classification but then it takes the ndvi resolution
-
-#Reproject the study area too
-study_area <- project(study_area,lulc_kariba)#We have to put in the same georeferenced system
-```
-
-### Crop and mask the rasters
-This crops it to only the study area and then masks the area.
+# Define function to automate data processing
 ```{r}
-# Crop and mask the land use file
-lulc_kariba_masked <- lulc_kariba %>%
+# Define function 
+process_raster <- function(raster, ref_raster, study_area){
+  if ((res(raster)[1]) > (res(ref_raster)[1])){
+    raster_aligned <- resample(raster, ref_raster, method="bilinear")
+  }else {
+    raster_aligned <- project(raster, ref_raster, method = "near")
+  }
+  raster_masked <- raster_aligned %>%
   crop(study_area) %>%
-  mask(study_area)
-
-# Same for NDVI
-ndvi_masked <- ndvi %>%
-  crop(study_area) %>%
-  mask(study_area)
-
-# Same for CHIRPS
-chirps_masked <- chirps
+  mask(study_area) 
+  return(raster_masked)
+}
 ```
 
-### Isolate each of the landcover classes from the land use file
+# Apply the function to project, clip and mask all the data
+```{r}
+chirps_masked <- process_raster(chirps, ndvi, study_area)
+lulc_kariba_masked <- process_raster(lulc_kariba, ndvi, study_area)
+lulc_mcc_masked <- process_raster(lulc_mcc, ndvi, study_area)
+ndvi_masked <- process_raster(ndvi, ndvi, study_area)
+```
+
+### Isolate each of the landcover classes from Kariba
+```{r}
+# Extract the indices of the cells which are of each land-cover type
+miombo_kariba <- which(lulc_kariba_masked[]==4) #we select the type of forests
+mopane_kariba <- which(lulc_kariba_masked[]==5)
+riparian_kariba <- which(lulc_kariba_masked[]==7)
+crop_kariba <- which(lulc_kariba_masked[]==2)
+
+list_kariba <- list(miombo_kariba = miombo_kariba, 
+                    mopane_kariba = mopane_kariba, 
+                    riparian_kariba=riparian_kariba, 
+                    crop_kariba=crop_kariba)
+```
+
+### Isolate each of the landcover classes from the MCC 
 ```{r}
 # Extract the indices of the cells which are of each landcover type
-miombo <- which(lulc_kariba_masked[]==4) #we select the type of forests
-mopane <- which(lulc_kariba_masked[]==5)
-riparian <- which(lulc_kariba_masked[]==7)
-crop <- which(lulc_kariba_masked[]==2)
-```
+# Unique values are: 1, 3, 51, 53, 52, 7, 6, 10, 43, 42, 41, 2
+miombo_mcc_41<- which(lulc_mcc_masked[]==41)
+miombo_mcc_42<- which(lulc_mcc_masked[]==42)
+miombo_mcc_43<- which(lulc_mcc_masked[]==43) 
+mopane_mcc_51<- which(lulc_mcc_masked[]==51)
+mopane_mcc_52 <- which(lulc_mcc_masked[]==52)
+mopane_mcc_53 <- which(lulc_mcc_masked[]==53)
+riparian_mcc <- which(lulc_mcc_masked[]==7)
+crop_mcc <- which(lulc_mcc_masked[]==2)
 
-# Extract the NDVI for each landcover type
-This extracts the NDVI value of each raster at the indices which correspond to the land cover types.
-It stores each raster layer as a column and the rows are cells (in a dataframe)
-```{r}
-Miombo.NDVI=ndvi_masked[miombo] #we extract the ndvi values for the type of forests
-Mopane.NDVI=ndvi_masked[mopane]
-Riparian.NDVI=ndvi_masked[riparian]
-crop.NDVI=ndvi_masked[crop]
-```
-
-### Take the mean of the ndvi for each landcover type
-```{r, mean ndvi}
-Miombo.NDVI.mean=colMeans(Miombo.NDVI,na.rm=T)
-Mopane.NDVI.mean=colMeans(Mopane.NDVI,na.rm=T)
-Riparian.NDVI.mean=colMeans(Riparian.NDVI,na.rm=T)
-crop.NDVI.mean=colMeans(crop.NDVI,na.rm=T)
+list_mcc <- list(
+  miombo_mcc_41 = miombo_mcc_41, 
+  miombo_mcc_42 = miombo_mcc_42, 
+  miombo_mcc_43 = miombo_mcc_43, 
+  mopane_mcc_51 = mopane_mcc_51, 
+  mopane_mcc_52 = mopane_mcc_52, 
+  mopane_mcc_53 = mopane_mcc_53, 
+  riparian_mcc = riparian_mcc, 
+  crop_mcc = crop_mcc
+)
 ```
 
 ### Extract the dates from the NDVI
 ```{r, dates}
 # This extracts the dates as a character string
 ndvi.dates=names(ndvi_masked) #Extract the name of ndvi bands
-
 # Because there the format is 2015_03_18_NDVI, we want to get rid of the NDVI
 # Therefore we remove it using sub()
 dates = sub("_NDVI", "", ndvi.dates) #we keep only the date
-
 # Then we convert the character string into a date format object
 ndvi_dates <- as.Date(dates,"%Y_%m_%d") #put in date format
 ```
+
+### Extract Chirps Dates
+```{r}
+chirps_dates=names(chirps_masked) #Extract the name of ndvi bands
+chirps_dates = sub("_precipitation", "", chirps_dates) #we keep only the date
+chirps_dates <- as.Date(chirps_dates,"%Y%m%d")
+```
+
+# 
+```{r}
+extract_means <- function(list_indexes, raster, dates){
+  
+# First set up the output df
+col_names <- names(list_indexes)   # Extract the names of the objects dynamically
+output_df <- data.frame(matrix(ncol = length(col_names), nrow = length(dates))) # Create an empty dataframe with these column names
+colnames(output_df) <- col_names # Set the df to take the names from the list
+rownames(output_df) <- dates
+
+# Now loop through the list and calculate the mean of each date for each land cover
+  for (name in col_names){
+    # Extract the means
+    i <- list_indexes[[name]]
+    df <- raster[i] # Extract the values of NDVI for the right cells using the index, store as dataframe with each date being a column
+    col_mean <- colMeans(df, na.rm=T) #Take a mean of each column in the dataframe (i.e the date)
+    output_df[[name]] <- col_mean # Add each vector of means to the columns in the df
+  }
+return(output_df)
+}
+```
+
+# Use the function to get the mean of each raster for each land cover
+```{r}
+# MCC 
+ndvi_mcc_df <- extract_means(list_mcc, ndvi_masked, ndvi_dates)
+chirps_mcc_df <- extract_means(list_mcc, chirps_masked, chirps_dates)
+
+#Kariba
+ndvi_kariba_df <- extract_means(list_kariba, ndvi_masked, ndvi_dates)
+chirps_kariba_df <- extract_means(list_kariba, chirps_masked, chirps_dates)
+
+
+```
+
 
 ### Plot NDVI vs Time
 ```{r,plot}
@@ -143,40 +192,8 @@ ggplot(ndvi_long,aes(x=dates,y=NDVI,color=Type))+
   labs(title = "Change in NDVI", x = "Date", y = "NDVI", color = "Vegetation") + 
   theme_minimal()
 ```
-# CHIRPS Data
-### Reproject, crop and mask
-Chirps here is resampled to reduce the definition and match CRS of land use cover raster
-```{r, rain}
-# Resample, crop and mask
-chirps_masked <- chirps %>%
-  resample(lulc_kariba_masked, method="bilinear") %>%
-  crop(study_area) %>%
-  mask(study_area)
 
-miombo.rain=chirps_masked[miombo] #we extract the rain values on miombo forests
-mopane.rain=chirps_masked[mopane]
-riparian.rain=chirps_masked[riparian]
-crop.rain=chirps_masked[crop]
 
-head(miombo.rain)
-```
-
-### Take the mean of the ndvi for each landcover type
-```{r, mean ndvi}
-miombo.rain.mean=colMeans(miombo.rain,na.rm=T)
-mopane.rain.mean=colMeans(mopane.rain,na.rm=T)
-riparian.rain.mean=colMeans(riparian.rain,na.rm=T)
-crop.rain.mean=colMeans(crop.rain,na.rm=T)
-
-head(miombo.rain.mean)
-```
-
-### Extract Chirps Dates
-```{r}
-rain.dates=names(chirps_masked) #Extract the name of ndvi bands
-rain.dates = sub("_precipitation", "", rain.dates) #we keep only the date
-rain.dates <- as.Date(rain.dates,"%Y%m%d")
-```
 
 ### Plot Rain vs Time
 ```{r,plot}
@@ -223,13 +240,12 @@ rain_xts <- xts(miombo.rain.mean, order.by=rain.dates)
 # Plot original data
 
 # Apply a 30-day rolling mean to smooth short-term noise
-rain_smoothed <- rollapply(rain_xts, width=6, FUN=mean, align="center", fill=NA)
+rain_smoothed <- rollapply(rain_xts, width=15, FUN=mean, align="center", fill=NA)
 
 # Plot smoothed time series
 plot(rain_xts, main="rain Smoothed (5-frame Rolling Mean)", col="gray")
 lines(rain_smoothed, col="red", lwd=2)  # Overlay smoothed series
 ```
-
 
 # His script on CHIRPS
 ### Take the monthly mean of rainfall - Do we want to do this?
